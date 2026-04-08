@@ -105,7 +105,7 @@ def process_document(stream: DocumentStream):
 
     filtered_blocks = [
         b for b in blocks
-        if counter[b] > len(doc.pages) - 1
+        if counter[b] < len(doc.pages) - 1
     ]
 
     content = "\n".join(filtered_blocks) + "\n"
