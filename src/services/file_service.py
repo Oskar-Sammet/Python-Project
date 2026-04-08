@@ -1,11 +1,10 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 
+from src.exceptions.exceptions import FileNotFoundException
 from src.schemas.file import FileStatusEnum
 from src.schemas.file import FileCreate
 from src.models.file import File
 from src.utils.docling import extract_content
-
 
 def get_file(id: str, db: Session) -> type[File] | None:
     return db.query(File).filter(File.id == id).first()
@@ -28,25 +27,25 @@ def upload_file(data: FileCreate, db: Session):
 def process_file(file_id: int, db: Session):
     # find file by id to process
     file = db.query(File).filter(File.id == file_id).first()
+
+    if not file:
+        raise FileNotFoundException("File not found")
+
     # grap files content
-    content = extract_content(file.content, file.filename)
+    with open(file.path, "rb") as f:
+        raw = f.read()
 
+    if file.filename.lower().endswith(".txt"):
+        content = raw.decode("utf-8")
+    else:
+        content = extract_content(raw, file.filename)
 
+    with open(file.path + ".md", "w") as f:
+        f.write(content)
 
-    # clean content
+    # set the file status to "completed"
+    db.query(File).filter(File.id == file_id).update({"status": FileStatusEnum.completed})
+    db.commit()
+    db.refresh(file)
 
-
-    # generate embeddings using ollama
-    # embeddings = ollama.embed(model="nomic-embed-text", input=content)
-    # embedding_length = len(embeddings['embeddings'][0])
-
-    # collection is only created if it doesn't exist already
-    # create_collection(collection_name="files", size=embedding_length)
-
-    # client.upsert(
-    #     collection_name="files",
-    #     points=[
-    #         PointStruct(id=idx, vector=vector, payload={"filename": file.filename})
-    #         for idx, vector in enumerate(embeddings['embeddings'])
-    #     ]
-    # )
+    return file

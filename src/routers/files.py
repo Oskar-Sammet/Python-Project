@@ -1,10 +1,11 @@
-
 import os
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from typing import Annotated, List
 
 from sqlalchemy.orm import Session
+from starlette.responses import JSONResponse
 
+from src.exceptions.exceptions import FileNotFoundException
 from src.schemas.file import FileStatusEnum
 from src.database.postgres import get_db
 from src.services import file_service
@@ -20,7 +21,7 @@ router = APIRouter(
 upload_validator = FileValidator()
 
 # Get a specific processed file by ID
-@router.get("/process/{file_id}")
+@router.get("/{file_id}")
 async def get_processed_file(file_id: int):
     pass
 
@@ -53,18 +54,20 @@ async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session 
     await uploaded_file.close()
 
     if not file:
-        raise HTTPException(status_code=404, detail="File upload failed!")
+        raise FileNotFoundException("File upload failed!")
 
     return file
 
 # Route for processing one specific file
-# Get local path -> Process -> vector database
-@router.post("/process/{id}")
+# Get a local path -> Process -> vector database
+@router.post("/process/{file_id}")
 async def process_file(file_id: int, db: Session = Depends(get_db)):
     file_service.process_file(file_id, db)
-    return {"status": 200}
+    return JSONResponse(status_code=200, content={"message": "File processed successfully"})
 
 # Route for processing multiple files
 @router.post("/process")
-async def process_files():
-    pass
+async def process_files(file_ids: Annotated[List[int], int], db: Session = Depends(get_db)):
+    for file_id in file_ids:
+        file_service.process_file(file_id, db)
+    return JSONResponse(status_code=200, content={"message": "Files processed successfully"})

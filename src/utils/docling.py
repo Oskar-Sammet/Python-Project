@@ -6,16 +6,18 @@ from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode, \
     PictureDescriptionApiOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption, CsvFormatOption, \
+    MarkdownFormatOption, AsciiDocFormatOption
 from docling_core.types.doc import ImageRefMode
 from docling_core.types.io import DocumentStream
 import os
+from collections import Counter
 
 OLLAMA_URL = "http://localhost:11434"
 VLM_MODEL = "qwen3.5:2b"
 VLM_PROMPT = "Explain what you see in the image in 1 sentence."
 
-PAGE_BREAK_PLACEHOLDER = "<!-- page break -->"
+PAGE_BREAK_PLACEHOLDER = "[PAGE_BREAK]"
 IMAGE_DESCRIPTION_START = "<image_description>"
 IMAGE_DESCRIPTION_END = "</image_description>"
 
@@ -45,6 +47,7 @@ def create_pdf_pipeline_option() -> PdfPipelineOptions:
         #picture_description_options=create_picture_description_options(),
     )
 
+
 def process_document(stream: DocumentStream):
     # Returns a Docling Document
     converter = DocumentConverter(
@@ -52,6 +55,17 @@ def process_document(stream: DocumentStream):
             InputFormat.PDF: PdfFormatOption(
                 pipeline_options=create_pdf_pipeline_option(),
                 backend=PyPdfiumDocumentBackend
+            ),
+
+            # Not implemented - Needs work
+            InputFormat.CSV: CsvFormatOption(
+                pipeline_options=None,
+            ),
+            InputFormat.MD: MarkdownFormatOption(
+                pipeline_options=None,
+            ),
+            InputFormat.ASCIIDOC: AsciiDocFormatOption(
+                pipeline_options=None,
             )
         }
     )
@@ -77,13 +91,24 @@ def process_document(stream: DocumentStream):
 
     content = content.replace("<!--<annotation />-->", IMAGE_DESCRIPTION_END)
 
-    content = content.replace('-', '')
     content = content.strip()
 
+    # remove empty lines or lines with a single character
     content = os.linesep.join([
         line for line in content.splitlines()
-        if line
+        if line or len(line) > 1
     ])
+
+    # remove content that is repeated in multiple pages
+    blocks = content.split("\n")
+    counter = Counter(blocks)
+
+    filtered_blocks = [
+        b for b in blocks
+        if counter[b] > len(doc.pages) - 1
+    ]
+
+    content = "\n".join(filtered_blocks) + "\n"
 
     return content
 
