@@ -5,11 +5,10 @@ from typing import Annotated, List
 from sqlalchemy.orm import Session
 
 from src.database.postgres import get_db
-from src.database.mapper.file_mapper import from_upload_file_to_file_create
-from src.database.services import file_service
+from src.mappers.file_mapper import from_upload_file_to_file_create
+from src.services import file_service
 from src.utils.validators import FileValidator
-from src.database.schemas.file import FileSchema
-import ollama
+from src.schemas.file import FileSchema
 
 router = APIRouter(
     prefix="/files",

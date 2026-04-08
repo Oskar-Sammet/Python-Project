@@ -1,8 +1,6 @@
-from typing import Dict
-
 from sqlalchemy.orm import Session
-from src.database.schemas.file import FileCreate
-from src.database.models.file import File
+from src.schemas.file import FileCreate
+from src.models.file import File
 
 def get_file(id: str, db: Session) -> type[File] | None:
     return db.query(File).filter(File.id == id).first()
