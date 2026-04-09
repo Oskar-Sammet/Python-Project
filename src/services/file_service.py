@@ -1,6 +1,7 @@
 from typing import List, Annotated, Any
 from fastapi import UploadFile
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
+from qdrant_client import models
 from sqlalchemy.orm import Session
 from src.config import settings
 from src.exceptions.exceptions import FileNotFoundException, BaseAppException
@@ -23,7 +24,6 @@ def get_files(status: FileStatusEnum | None, skip: int = 0, limit: int = 100, db
     query = db.query(File)
 
     if status is not None:
-        print("dawdwa: " + str(status.value) + " , " + status)
         query = query.filter(File.status == str(status.value))
 
     return query.offset(skip).limit(limit).all()
@@ -83,7 +83,7 @@ def process_file(file_id: int, db: Session):
         raise FileNotFoundException(f"File not found on disk: {file.path}")
 
     # Throw an error for not supported file types
-    if extension == "pdf" or extension == "txt":
+    if extension == "txt" or extension == "md":
         raise BaseAppException(f"File type {extension} is not supported yet")
 
     try:
@@ -131,7 +131,6 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
     )
 
     embedding_length = len(embeddings['embeddings'][0])
-
     client.recreate_collection(
         collection_name="files",
         vectors_config=VectorParams(
@@ -139,6 +138,8 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
             distance=Distance.COSINE
         ),
     )
+    # Check if collection doesn't exists already
+    # if not client.collection_exists("files"):
 
     vectors = embeddings['embeddings']
 
@@ -162,3 +163,39 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
         collection_name="files",
         points=points
     )
+
+def search(query: str, db: Session):
+    query_embedding = ollama.embed(
+        model="nomic-embed-text:latest",
+        input=query,
+    )['embeddings'][0]
+
+    results = client.query_points(
+        collection_name="files",
+        query=query_embedding,
+        with_payload=True,
+        limit=5,
+        score_threshold=0.6,
+    ).points
+
+    prompt_sources = "\n\n".join([hit.payload.get('text')['content'] for hit in results])
+
+    prompt = f"""
+    You are a helpful assistant.
+    Answer the following question only based on the following sources below.
+    If the answer is not in the sources, say "I don't know".
+    
+    Context:
+    {prompt_sources}
+    
+    Question: 
+    {query}
+    
+    Answer:
+    """
+
+    response = ollama.chat(model="llama3.1", messages=[
+        {"role": "user", "content": prompt}
+    ])
+
+    return response['message']['content']
