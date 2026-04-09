@@ -18,13 +18,7 @@ upload_validator = FileValidator()
 @router.get("/query")
 def search(query: str, db: Session = Depends(get_db)):
     results = file_service.search(query, db)
-
-    print(results)
-
-    # for hit in results:
-    #     print(f"score={hit.score:.4f}  id={hit.id}  chunk_index={hit.payload.get('chunk_index')}")
-
-    return JSONResponse(status_code=200, content={"message": "Files processed successfully"})
+    return JSONResponse(status_code=200, content={"answer": results})
 
 # Get a paginated list of processed files with filtering
 @router.get("/", response_model=List[FileRead])

@@ -1,5 +1,9 @@
+import os
+
 from io import BytesIO
 from typing import Any
+from collections import Counter
+from src.config import settings
 
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
@@ -8,27 +12,21 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructur
 from docling.document_converter import DocumentConverter, PdfFormatOption, CsvFormatOption, MarkdownFormatOption
 from docling_core.types.doc import ImageRefMode
 from docling_core.types.io import DocumentStream
-import os
-from collections import Counter
 
-OLLAMA_URL = "http://localhost:11434"
-VLM_MODEL = "qwen3.5:2b"
-VLM_PROMPT = "Explain what you see in the image in 1 sentence."
-
-PAGE_BREAK_PLACEHOLDER = "[PAGE_BREAK]"
+PAGE_BREAK_PLACEHOLDER = "<!-- page break -->"
 IMAGE_DESCRIPTION_START = "<image_description>"
 IMAGE_DESCRIPTION_END = "</image_description>"
 
 def create_picture_description_options() -> PictureDescriptionApiOptions:
     return PictureDescriptionApiOptions(
-        url = f"{OLLAMA_URL}/v1/chat/completions",
+        url = f"{settings.OLLAMA_URL}/v1/chat/completions",
         params=dict[str, Any](
-            model=VLM_MODEL,
+            model=settings.VISION_LANGUAGE_MODEL,
             think=False,
             seed=42,
             max_completion_tokens=256,
         ),
-        prompt=VLM_PROMPT,
+        prompt=settings.VISION_LANGUAGE_PROMPT,
         timeout=90,
     )
 
@@ -45,12 +43,6 @@ def create_pdf_pipeline_option() -> PdfPipelineOptions:
         #picture_description_options=create_picture_description_options(),
     )
 
-def create_md_pipeline_option() -> PipelineOptions:
-    return PipelineOptions(
-        enable_remote_services=True,
-    )
-
-
 def process_document(stream: DocumentStream):
     # Returns a Docling Document
     converter = DocumentConverter(
@@ -63,9 +55,7 @@ def process_document(stream: DocumentStream):
 
             InputFormat.CSV: CsvFormatOption(),
 
-            InputFormat.MD: MarkdownFormatOption(
-                pipeline_options=create_md_pipeline_option(),
-            ),
+            InputFormat.MD: MarkdownFormatOption(),
         }
     )
 
