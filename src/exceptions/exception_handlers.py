@@ -1,23 +1,49 @@
+from fastapi import FastAPI, Request
+import logging
+
+from datetime import datetime
 from starlette.responses import JSONResponse
 
-from src.exceptions.exceptions import FileNotFoundException, BaseAppException, FileConflictException
-from main import app
-import logging
+from src.exceptions.exceptions import (
+    FileConflictException, BaseAppException, ErrorResponse, FileNotFoundException)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@app.exception_handler(BaseAppException)
-async def base_app_exception_handler(request, exc) -> JSONResponse:
-    logger.error("Application error: %s", exc.message)
-    return JSONResponse(status_code=exc.status_code, content={"message": exc.message})
+def register_exception_handlers(app: FastAPI):
+    """Register exception handlers"""
 
-@app.exception_handler(FileConflictException)
-async def file_conflict_exception_handler(request, exc) -> JSONResponse:
-    logger.error("File conflict error: %s", exc.message)
-    return JSONResponse(status_code=409, content={"message": exc.message})
+    @app.exception_handler(BaseAppException)
+    async def base_app_exception_handler(request: Request, exc: BaseAppException) -> JSONResponse:
+        logger.error("Application error: %s", exc.message)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=ErrorResponse(
+            error=exc.message,
+            code=f"APP_ERROR_{exc.status_code}",
+            timestamp=datetime.now(),
+            path=str(request.url.path),
+        ).model_dump())
 
-@app.exception_handler(FileNotFoundException)
-async def file_conflict_exception_handler(request, exc) -> JSONResponse:
-    logger.error("File conflict error: %s", exc.message)
-    return JSONResponse(status_code=409, content={"message": exc.message})
+    @app.exception_handler(FileConflictException)
+    async def file_conflict_exception_handler(request: Request, exc: FileConflictException) -> JSONResponse:
+        logger.error("File conflict error: %s", exc.message)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=ErrorResponse(
+                error=exc.message,
+                code=f"CONFLICT_{exc.status_code}",
+                timestamp=datetime.now(),
+                path=str(request.url.path),
+            ).model_dump()
+        )
+
+    @app.exception_handler(FileNotFoundException)
+    async def file_not_found_exception_handler(request: Request, exc: FileNotFoundException) -> JSONResponse:
+        logger.error("File not found error: %s", exc.message)
+        return JSONResponse(status_code=exc.status_code, content=ErrorResponse(
+            error=exc.message,
+            code=f"MISSING_{exc.status_code}",
+            timestamp=datetime.now(),
+            path=str(request.url.path),
+        ).model_dump())

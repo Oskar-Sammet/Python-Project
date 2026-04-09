@@ -43,7 +43,6 @@ async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session 
     return JSONResponse(status_code=200, content={"message": "File uploaded successfully"})
 
 # Route for processing one specific file
-# Get a local path -> Process -> vector database
 @router.post("/process/{file_id}")
 async def process_file(file_id: int, db: Session = Depends(get_db)):
     file_service.process_file(file_id, db)

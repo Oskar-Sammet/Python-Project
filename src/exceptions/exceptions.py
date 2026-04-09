@@ -1,5 +1,17 @@
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional, Any
+
+class ErrorResponse(BaseModel):
+    """Standard error response format"""
+    error: str
+    code: str
+    timestamp: datetime
+    path: str
+    details: Optional[Any] = None
+
 class BaseAppException(Exception):
-    """Base exception for our application"""
+    """Base for all of our application exceptions"""
 
     def __init__(self, message: str, status_code: int = 500):
         self.message = message

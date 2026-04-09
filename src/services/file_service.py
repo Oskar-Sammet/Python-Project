@@ -1,7 +1,6 @@
 from typing import List, Annotated, Any
 from fastapi import UploadFile
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
-from qdrant_client import models
 from sqlalchemy.orm import Session
 from src.config import settings
 from src.exceptions.exceptions import FileNotFoundException, BaseAppException
