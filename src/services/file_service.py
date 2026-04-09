@@ -1,4 +1,4 @@
-from typing import List, Annotated
+from typing import List, Annotated, Any
 from fastapi import UploadFile
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
 from sqlalchemy.orm import Session
@@ -14,13 +14,19 @@ import ollama
 import uuid
 
 def get_file(file_id: int, db: Session) -> FileRead:
-    file = db.query(File).filter(File.id == file_id, File.status == FileStatusEnum.completed).first()
+    file = db.query(File).filter(File.id == file_id).first()
     if not file:
         raise FileNotFoundException(f"File with id {file_id} not found")
     return FileRead(**file.__dict__)
 
-def get_files(skip: int = 0, limit: int = 100, db: Session = None):
-    return db.query(File).filter(File.status == FileStatusEnum.completed).offset(skip).limit(limit).all()
+def get_files(status: FileStatusEnum | None, skip: int = 0, limit: int = 100, db: Session = None) -> list[Any]:
+    query = db.query(File)
+
+    if status is not None:
+        print("dawdwa: " + str(status.value) + " , " + status)
+        query = query.filter(File.status == str(status.value))
+
+    return query.offset(skip).limit(limit).all()
 
 # This function should only handle the file upload / the file creation in the database
 async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session):
@@ -39,7 +45,7 @@ async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session)
         f.write(content)
 
     # Create a FileCreate instance from the uploaded file using the mapper
-    file_create = FileCreate(filename=uploaded_file.filename, status=FileStatusEnum.ready, path=file_path)
+    file_create = FileCreate(filename=uploaded_file.filename, status=FileStatusEnum.READY, path=file_path)
 
     await uploaded_file.close()
 
@@ -76,13 +82,14 @@ def process_file(file_id: int, db: Session):
     except OSError:
         raise FileNotFoundException(f"File not found on disk: {file.path}")
 
-    if extension == "txt":
-        content = raw.decode("utf-8")
-    else:
-        try:
-            content = extract_content(raw, file.filename)
-        except Exception as e:
-            raise BaseAppException(f"Failed to extract content from {file.filename}: {e}")
+    # Throw an error for not supported file types
+    if extension == "pdf" or extension == "txt":
+        raise BaseAppException(f"File type {extension} is not supported yet")
+
+    try:
+        content = extract_content(raw, file.filename)
+    except Exception as e:
+        raise BaseAppException(f"Failed to extract content from {file.filename}: {e}")
 
     with open(file.path + ".md", "w") as f:
         f.write(content)
@@ -109,7 +116,7 @@ def process_file(file_id: int, db: Session):
 
     generate_embeddings(filename=file.path, chunks=chunks)
     # set the file status to "completed"
-    db.query(File).filter(File.id == file_id).update({"status": FileStatusEnum.completed})
+    db.query(File).filter(File.id == file_id).update({"status": FileStatusEnum.COMPLETED})
     db.commit()
     db.refresh(file)
 

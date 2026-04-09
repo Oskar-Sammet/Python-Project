@@ -1,11 +1,10 @@
-import enum
+from enum import Enum
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
-class FileStatusEnum(enum.Enum):
-    ready = 0
-    processing = 1
-    completed = 2
+class FileStatusEnum(str, Enum):
+    READY = "ready"
+    COMPLETED = "completed"
 
 class FileBase(BaseModel):
     filename: str = Field(min_length=1, max_length=255)

@@ -1,12 +1,16 @@
-from fastapi import APIRouter, UploadFile, File, Depends
-from typing import Annotated, List
+from enum import Enum
+
+from fastapi import APIRouter, UploadFile, File, Depends, Query
+from typing import Annotated, List, Optional
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 
+from src.schemas.file import FileStatusEnum
 from src.schemas.file import FileRead
 from src.database.postgres import get_db
 from src.services import file_service
 from src.utils.validators import FileValidator
+from enum import Enum
 
 router = APIRouter(
     prefix="/files",
@@ -17,13 +21,18 @@ upload_validator = FileValidator()
 
 # Get a specific processed file by ID
 @router.get("/{file_id}", response_model=FileRead)
-async def get_processed_file(file_id: int, db: Session = Depends(get_db)):
+async def get_file(file_id: int, db: Session = Depends(get_db)):
     return file_service.get_file(file_id, db)
 
 # Get a paginated list of processed files with filtering
 @router.get("/", response_model=List[FileRead])
-async def get_processed_files(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return file_service.get_files(skip, limit, db)
+async def get_files(
+        status: Optional[FileStatusEnum] = None,
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=1000),
+        db: Session = Depends(get_db)
+):
+    return file_service.get_files(status, skip, limit, db)
 
 # Route for uploading files
 @router.post("/")

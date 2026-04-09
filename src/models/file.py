@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, Enum, LargeBinary
+from sqlalchemy import Column, String, Integer, DateTime
 from src.database.postgres import Base
 from src.schemas.file import FileStatusEnum
 
@@ -11,7 +11,8 @@ class File(Base):
     filename = Column(String, index=True, unique=True)
     path = Column(String, index=True)
 
-    status = Column(Enum(FileStatusEnum), default=FileStatusEnum.ready)
+    status = Column(String, default=FileStatusEnum.READY.value)
+    
 
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

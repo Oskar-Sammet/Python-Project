@@ -1,13 +1,11 @@
 from io import BytesIO
 from typing import Any
 
-from click import prompt
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode, \
-    PictureDescriptionApiOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption, CsvFormatOption, \
-    MarkdownFormatOption, AsciiDocFormatOption
+    PictureDescriptionApiOptions, PipelineOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption, CsvFormatOption, MarkdownFormatOption
 from docling_core.types.doc import ImageRefMode
 from docling_core.types.io import DocumentStream
 import os
@@ -47,26 +45,27 @@ def create_pdf_pipeline_option() -> PdfPipelineOptions:
         #picture_description_options=create_picture_description_options(),
     )
 
+def create_md_pipeline_option() -> PipelineOptions:
+    return PipelineOptions(
+        enable_remote_services=True,
+    )
+
 
 def process_document(stream: DocumentStream):
     # Returns a Docling Document
     converter = DocumentConverter(
+        allowed_formats=[InputFormat.PDF, InputFormat.MD, InputFormat.CSV],
         format_options={
             InputFormat.PDF: PdfFormatOption(
                 pipeline_options=create_pdf_pipeline_option(),
                 backend=PyPdfiumDocumentBackend
             ),
 
-            # Not implemented - Needs work
-            InputFormat.CSV: CsvFormatOption(
-                pipeline_options=None,
-            ),
+            InputFormat.CSV: CsvFormatOption(),
+
             InputFormat.MD: MarkdownFormatOption(
-                pipeline_options=None,
+                pipeline_options=create_md_pipeline_option(),
             ),
-            InputFormat.ASCIIDOC: AsciiDocFormatOption(
-                pipeline_options=None,
-            )
         }
     )
 
@@ -99,16 +98,14 @@ def process_document(stream: DocumentStream):
         if line or len(line) > 1
     ])
 
-    # remove content that is repeated in multiple pages
-    blocks = content.split("\n")
-    counter = Counter(blocks)
-
-    filtered_blocks = [
-        b for b in blocks
-        if counter[b] < len(doc.pages) - 1
-    ]
-
-    content = "\n".join(filtered_blocks) + "\n"
+    # remove content that is repeated in multiple pages (only meaningful for multi-page docs)
+    if len(doc.pages) > 1:
+        blocks = content.split("\n")
+        counter = Counter(blocks)
+        content = "\n".join(
+            b for b in blocks
+            if counter[b] < len(doc.pages) - 1
+        ) + "\n"
 
     return content
 
