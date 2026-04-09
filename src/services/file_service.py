@@ -1,23 +1,53 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from typing import List, Annotated
+from fastapi import UploadFile
+from qdrant_client.http.models import VectorParams, Distance, PointStruct
 from sqlalchemy.orm import Session
-
-from src.exceptions.exceptions import FileNotFoundException
-from src.schemas.file import FileStatusEnum
-from src.schemas.file import FileCreate
+from src.config import settings
+from src.exceptions.exceptions import FileNotFoundException, BaseAppException
+from src.schemas.file import FileStatusEnum, FileRead, FileCreate
 from src.models.file import File
 from src.utils.docling import extract_content
-from src.utils.chunker import ChunkingPipeline
+from src.utils.chunker import ChunkingPipeline, Chunk
+from src.vector_database.qdrant import client
+import os
+import ollama
+import uuid
 
-def get_file(id: str, db: Session) -> type[File] | None:
-    return db.query(File).filter(File.id == id).first()
+def get_file(file_id: int, db: Session) -> FileRead:
+    file = db.query(File).filter(File.id == file_id, File.status == FileStatusEnum.completed).first()
+    if not file:
+        raise FileNotFoundException(f"File with id {file_id} not found")
+    return FileRead(**file.__dict__)
 
 def get_files(skip: int = 0, limit: int = 100, db: Session = None):
     return db.query(File).filter(File.status == FileStatusEnum.completed).offset(skip).limit(limit).all()
 
 # This function should only handle the file upload / the file creation in the database
-def upload_file(data: FileCreate, db: Session):
+async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session):
+    # Validate the files extension and content type
+    # await upload_validator.validate(data)
+
+    # Create upload dir when needed
+    os.makedirs(settings.UPLOAD_DESTINATION, exist_ok=True)
+
+    # Define file path
+    file_path = os.path.join(settings.UPLOAD_DESTINATION, uploaded_file.filename)
+
+    # Write uploaded file to destination
+    with open(file_path, "wb") as f:
+        content = await uploaded_file.read()
+        f.write(content)
+
+    # Create a FileCreate instance from the uploaded file using the mapper
+    file_create = FileCreate(filename=uploaded_file.filename, status=FileStatusEnum.ready, path=file_path)
+
+    await uploaded_file.close()
+
     # create a file instance
-    file_instance = File(**data.model_dump())
+    file_instance = File(**file_create.model_dump())
+
+    if not file_instance:
+        raise BaseAppException("Failed to create file instance")
 
     # add the file_instance to the database
     db.add(file_instance)
@@ -25,6 +55,10 @@ def upload_file(data: FileCreate, db: Session):
     db.refresh(file_instance)
 
     return file_instance
+
+def process_files(file_ids: List[int], db: Session):
+    for file_id in file_ids:
+        process_file(file_id, db)
 
 def process_file(file_id: int, db: Session):
     # find file by id to process
@@ -36,19 +70,25 @@ def process_file(file_id: int, db: Session):
     extension = file.filename.split(".")[-1].lower()
 
     # grap files content
-    with open(file.path, "rb") as f:
-        raw = f.read()
+    try:
+        with open(file.path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        raise FileNotFoundException(f"File not found on disk: {file.path}")
 
     if extension == "txt":
         content = raw.decode("utf-8")
     else:
-        content = extract_content(raw, file.filename)
+        try:
+            content = extract_content(raw, file.filename)
+        except Exception as e:
+            raise BaseAppException(f"Failed to extract content from {file.filename}: {e}")
 
     with open(file.path + ".md", "w") as f:
         f.write(content)
 
     chunk_pipeline = ChunkingPipeline(
-        chunk_size=500,
+        chunk_size=1500,
         chunk_overlap=100,
         min_chunk_size=50,
         document_type="markdown"

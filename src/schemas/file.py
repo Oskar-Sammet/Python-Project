@@ -1,34 +1,23 @@
+import enum
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
-import enum
 
 class FileStatusEnum(enum.Enum):
     ready = 0
     processing = 1
     completed = 2
 
-# DTO
 class FileBase(BaseModel):
-    filename: str
-    path: str
-
-    status: enum.Enum
-
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
-
-    model_config = ConfigDict(from_attributes=True)
+    filename: str = Field(min_length=1, max_length=255)
+    path: str = Field(min_length=1, max_length=255)
+    status: FileStatusEnum
 
 class FileCreate(FileBase):
     pass
 
-class FileSchema(FileBase):
+class FileRead(FileBase):
     id: int
-
-class FileListItem(BaseModel):
-    id: int
-    filename: str
-
-    status: enum.Enum
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
