@@ -107,6 +107,7 @@ def process_file(file_id: int, db: Session):
         print(f"Preview: {chunk.metadata['preview']}")
         print("-" * 50)
 
+    generate_embeddings(filename=file.path, chunks=chunks)
     # set the file status to "completed"
     db.query(File).filter(File.id == file_id).update({"status": FileStatusEnum.completed})
     db.commit()
@@ -114,3 +115,43 @@ def process_file(file_id: int, db: Session):
 
     return file
 
+def generate_embeddings(filename: str, chunks: List[Chunk]):
+    print("Generating embeddings...")
+
+    embeddings = ollama.embed(
+        model="nomic-embed-text:latest",
+        input=[chunk.content for chunk in chunks],
+    )
+
+    embedding_length = len(embeddings['embeddings'][0])
+
+    client.recreate_collection(
+        collection_name="files",
+        vectors_config=VectorParams(
+            size=embedding_length,
+            distance=Distance.COSINE
+        ),
+    )
+
+    vectors = embeddings['embeddings']
+
+    points = []
+
+    for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        points.append(PointStruct(
+            id=str(uuid.uuid4()),
+            vector=vector,
+            payload={
+                "text": chunk,
+                "filename": filename,
+                "chunk_index": idx,
+                "token_count": len(chunk.content.split()),
+                "page": chunk.metadata.get("page", 0),
+                "type": chunk.metadata.get("type", 0),
+            }
+        ))
+
+    client.upsert(
+        collection_name="files",
+        points=points
+    )
