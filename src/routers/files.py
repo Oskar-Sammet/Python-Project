@@ -35,7 +35,6 @@ async def get_files(
 async def get_file(file_id: int, db: Session = Depends(get_db)):
     return file_service.get_file(file_id, db)
 
-
 # Route for uploading files
 @router.post("/")
 async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session = Depends(get_db)):

@@ -1,5 +1,9 @@
 from typing import List, Annotated, Any
 from fastapi import UploadFile
+from langchain_core.language_models import BaseChatModel
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import ChatOllama
+from pydantic import BaseModel, Field
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
 from sqlalchemy.orm import Session
 from src.config import settings
@@ -163,6 +167,11 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
         points=points
     )
 
+class FormatedLLMOutput(BaseModel):
+    answer: float = Field(
+        description="The message that answers the users question or 'I don't know'",
+    )
+
 def search(query: str, db: Session):
     query_embedding = ollama.embed(
         model="nomic-embed-text:latest",
@@ -174,27 +183,36 @@ def search(query: str, db: Session):
         query=query_embedding,
         with_payload=True,
         limit=5,
-        score_threshold=0.6,
+        score_threshold=0.5,
     ).points
 
     prompt_sources = "\n\n".join([hit.payload.get('text')['content'] for hit in results])
 
-    prompt = f"""
-    You are a helpful assistant.
-    Answer the following question only based on the following sources below.
-    If the answer is not in the sources, say "I don't know".
-    
-    Context:
-    {prompt_sources}
-    
-    Question: 
+    SYSTEM_PROMPT = f"""
+        You are a helpful assistant.
+        Answer the following question only based on the following sources below.
+        If the answer is not in the sources, say "I don't know". If the question has nothing to do with the provided sources, say "I don't know".
+        Do not use any external knowledge, assumptions, or general LLM knowledge, only the context provided should be used.
+    """
+
+    HUMAN_PROMPT = f"""
+    User question:
     {query}
     
-    Answer:
+    Context Documents: {prompt_sources}
+    
+    Provide the reasoning behind.
     """
 
     response = ollama.chat(model="llama3.1", messages=[
-        {"role": "user", "content": prompt}
+        { "role": "system", "content": SYSTEM_PROMPT },
+        { "role": "user", "content": HUMAN_PROMPT },
     ])
+
+    print(response)
+
+    # answer = FormatedLLMOutput.model_validate_json(response.message.content)
+    #
+    # print(answer)
 
     return response['message']['content']
