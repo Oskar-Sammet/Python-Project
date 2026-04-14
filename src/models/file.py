@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, DateTime
-from src.database.postgres import Base
+from src.database.database import Base
 from src.schemas.file import FileStatusEnum
 
 # Entity

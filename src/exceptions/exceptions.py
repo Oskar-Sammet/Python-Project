@@ -19,13 +19,13 @@ class BaseAppException(Exception):
 
         super().__init__(self.message)
 
-class FileConflictException(BaseAppException):
+class ConflictException(BaseAppException):
     """File conflict exception for our application"""
 
     def __init__(self, message: str):
         super().__init__(message, status_code=409)
 
-class FileNotFoundException(BaseAppException):
+class NotFoundException(BaseAppException):
     """File not found exception for our application"""
 
     def __init__(self, message: str):

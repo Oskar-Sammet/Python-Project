@@ -5,7 +5,7 @@ from datetime import datetime
 from starlette.responses import JSONResponse
 
 from src.exceptions.exceptions import (
-    FileConflictException, BaseAppException, ErrorResponse, FileNotFoundException)
+    ConflictException, BaseAppException, ErrorResponse, NotFoundException)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,9 +25,9 @@ def register_exception_handlers(app: FastAPI):
             path=str(request.url.path),
         ).model_dump())
 
-    @app.exception_handler(FileConflictException)
-    async def file_conflict_exception_handler(request: Request, exc: FileConflictException) -> JSONResponse:
-        logger.error("File conflict error: %s", exc.message)
+    @app.exception_handler(ConflictException)
+    async def conflict_exception_handler(request: Request, exc: ConflictException) -> JSONResponse:
+        logger.error("Conflict error: %s", exc.message)
         return JSONResponse(
             status_code=exc.status_code,
             content=ErrorResponse(
@@ -38,9 +38,9 @@ def register_exception_handlers(app: FastAPI):
             ).model_dump()
         )
 
-    @app.exception_handler(FileNotFoundException)
-    async def file_not_found_exception_handler(request: Request, exc: FileNotFoundException) -> JSONResponse:
-        logger.error("File not found error: %s", exc.message)
+    @app.exception_handler(NotFoundException)
+    async def not_found_exception_handler(request: Request, exc: NotFoundException) -> JSONResponse:
+        logger.error("Not found: %s", exc.message)
         return JSONResponse(status_code=exc.status_code, content=ErrorResponse(
             error=exc.message,
             code=f"MISSING_{exc.status_code}",

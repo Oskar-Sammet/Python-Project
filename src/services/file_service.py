@@ -1,41 +1,50 @@
-from typing import List, Annotated, Any
-from fastapi import UploadFile
-from langchain_core.language_models import BaseChatModel
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import ChatOllama
-from pydantic import BaseModel, Field
-from qdrant_client.http.models import VectorParams, Distance, PointStruct
-from sqlalchemy.orm import Session
-from src.config import settings
-from src.exceptions.exceptions import FileNotFoundException, BaseAppException
-from src.schemas.file import FileStatusEnum, FileRead, FileCreate
-from src.models.file import File
-from src.utils.docling import extract_content
-from src.utils.chunker import ChunkingPipeline, Chunk
-from src.vector_database.qdrant import client
 import os
 import ollama
 import uuid
+import opendataloader_pdf
+import logging
 
-def get_file(file_id: int, db: Session) -> FileRead:
-    file = db.query(File).filter(File.id == file_id).first()
+from pydantic import BaseModel, Field
+from typing import Any, List, Annotated
+from fastapi import UploadFile
+from qdrant_client.http.models import VectorParams, Distance, PointStruct
+
+from src.models.file import File
+from src.schemas.file import FileRead, FileBase, FileStatusEnum
+from src.exceptions.exceptions import NotFoundException, BaseAppException
+from src.config import settings
+from src.utils.docling import extract_content
+from src.utils.chunker import ChunkingPipeline, Chunk
+from src.vector_database.qdrant import client
+from src.repositories.file_repository import FileRepository
+
+DEFAULT_START_SKIP: int = 0
+DEFAULT_FILE_LIMIT: int = 100
+
+PIPELINE_CHUNK_SIZE: int = 1500
+PIPELINE_CHUNK_OVERLAP_SIZE: int = 200
+PIPELINE_MIN_CHUNK_SIZE: int = 100
+PIPELINE_DOC_TYPE: str = "markdown"
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class FormatedLLMOutput(BaseModel):
+    answer: float = Field(
+        description="The message that answers the users question or 'I don't know'",
+    )
+
+def get_file_by_id(file_id: int, repo: FileRepository) -> FileRead:
+    file = repo.get_by_id(file_id)
     if not file:
-        raise FileNotFoundException(f"File with id {file_id} not found")
+        raise NotFoundException(f"File with id {file_id} not found")
     return FileRead(**file.__dict__)
 
-def get_files(status: FileStatusEnum | None, skip: int = 0, limit: int = 100, db: Session = None) -> list[Any]:
-    query = db.query(File)
-
-    if status is not None:
-        query = query.filter(File.status == str(status.value))
-
-    return query.offset(skip).limit(limit).all()
+def get_files_filtered(status: FileStatusEnum | None, skip: int = DEFAULT_START_SKIP, limit: int = DEFAULT_FILE_LIMIT, repo: FileRepository = None) -> list[type[File]]:
+    return repo.get_filtered_files(status, skip, limit)
 
 # This function should only handle the file upload / the file creation in the database
-async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session):
-    # Validate the files extension and content type
-    # await upload_validator.validate(data)
-
+async def upload_file(uploaded_file: Annotated[UploadFile, File()], repo: FileRepository):
     # Create upload dir when needed
     os.makedirs(settings.UPLOAD_DESTINATION, exist_ok=True)
 
@@ -48,80 +57,80 @@ async def upload_file(uploaded_file: Annotated[UploadFile, File()], db: Session)
         f.write(content)
 
     # Create a FileCreate instance from the uploaded file using the mapper
-    file_create = FileCreate(filename=uploaded_file.filename, status=FileStatusEnum.READY, path=file_path)
-
-    await uploaded_file.close()
+    file_create = FileBase(filename=uploaded_file.filename, status=FileStatusEnum.READY, path=file_path)
 
     # create a file instance
     file_instance = File(**file_create.model_dump())
 
+    # close the stream
+    await uploaded_file.close()
+
     if not file_instance:
-        raise BaseAppException("Failed to create file instance")
+        raise BaseAppException("Failed to create file instance!")
 
-    # add the file_instance to the database
-    db.add(file_instance)
-    db.commit()
-    db.refresh(file_instance)
+    return repo.create(file_instance)
 
-    return file_instance
-
-def process_files(file_ids: List[int], db: Session):
+def process_files_by_ids(file_ids: List[int], repo: FileRepository):
     for file_id in file_ids:
-        process_file(file_id, db)
+        process_file_by_id(file_id, repo)
 
-def process_file(file_id: int, db: Session):
-    # find file by id to process
-    file = db.query(File).filter(File.id == file_id).first()
+# Find file path in database, read raw file, start content extraction, create chunks, generate embeddings
+def process_file_by_id(file_id: int, repo: FileRepository):
+    file = get_file_by_id(file_id, repo)
 
-    if not file:
-        raise FileNotFoundException("File not found")
+    file_extension = file.filename.split(".")[-1].lower()
+    file_path = file.path
 
-    extension = file.filename.split(".")[-1].lower()
-
-    # grap files content
+    # Read the files content
     try:
-        with open(file.path, "rb") as f:
-            raw = f.read()
+        with open(file_path, "rb") as f:
+            raw_file_content = f.read()
     except OSError:
-        raise FileNotFoundException(f"File not found on disk: {file.path}")
+        raise BaseAppException("Failed to read file!")
 
-    # Throw an error for not supported file types
-    if extension == "txt" or extension == "md":
-        raise BaseAppException(f"File type {extension} is not supported yet")
+    # Throw an error for not yet supported file types
+    if file_extension == "txt" or file_extension == "md":
+        raise BaseAppException(f"File type {file_extension} is not supported yet")
 
+    # Content Extraction with Docling
     try:
-        content = extract_content(raw, file.filename)
-    except Exception as e:
-        raise BaseAppException(f"Failed to extract content from {file.filename}: {e}")
+        file_content = extract_content(raw_file_content, file_path)
+    except Exception as exc:
+        raise BaseAppException(f"Failed to extract file content using docling: {exc}")
 
-    with open(file.path + ".md", "w") as f:
-        f.write(content)
+    # Using OpenDataLoader
+    try:
+        opendataloader_pdf.convert(
+            input_path=[f'{file_path}'],
+            output_dir="uploads",
+            format="json,html",
+        )
+    except Exception as exc:
+        raise BaseAppException(f"Failed to convert file using OpenDataLoader: {exc}")
 
-    chunk_pipeline = ChunkingPipeline(
-        chunk_size=1500,
-        chunk_overlap=100,
-        min_chunk_size=50,
-        document_type="markdown"
+    # Write extracted content
+    try:
+        with open(file_path + ".md", "w") as f:
+            f.write(file_content)
+    except Exception as exc:
+        raise BaseAppException(f"Failed to write extracted content: {exc}")
+
+    chunking_pipeline = ChunkingPipeline(
+        chunk_size=PIPELINE_CHUNK_SIZE,
+        chunk_overlap=PIPELINE_CHUNK_OVERLAP_SIZE,
+        min_chunk_size=PIPELINE_MIN_CHUNK_SIZE,
+        document_type=PIPELINE_DOC_TYPE
     )
 
-    chunks = chunk_pipeline.chunk(
-        text=content, source_metadata={
-            "source": file.path + ".md",
-        })
+    generated_chunks = chunking_pipeline.chunk(text=file_content,
+        source_metadata={"source": file_path + ".md"})
 
-    print(f"Generated {len(chunks)} chunks\n")
+    logging.info(f"Generated {len(generated_chunks)} chunks\n")
 
-    for chunk in chunks:
-        print(f"ID: {chunk.chunk_id}")
-        print(f"Size: {chunk.metadata['chunk_size']} chars")
-        print(f"Preview: {chunk.metadata['preview']}")
-        print("-" * 50)
+    # Generate Embeddings using ollama
+    generate_embeddings(file.filename, generated_chunks)
 
-    generate_embeddings(filename=file.path, chunks=chunks)
-    # set the file status to "completed"
-    db.query(File).filter(File.id == file_id).update({"status": FileStatusEnum.COMPLETED})
-    db.commit()
-    db.refresh(file)
+    repo.update_status(file_id, FileStatusEnum.COMPLETED)
 
     return file
 
@@ -134,6 +143,8 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
     )
 
     embedding_length = len(embeddings['embeddings'][0])
+
+    # Currently the qdrant collection is recreated every time. Not optimal
     client.recreate_collection(
         collection_name="files",
         vectors_config=VectorParams(
@@ -141,11 +152,8 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
             distance=Distance.COSINE
         ),
     )
-    # Check if collection doesn't exists already
-    # if not client.collection_exists("files"):
 
     vectors = embeddings['embeddings']
-
     points = []
 
     for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
@@ -162,17 +170,9 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
             }
         ))
 
-    client.upsert(
-        collection_name="files",
-        points=points
-    )
+    client.upsert(collection_name="files", points=points)
 
-class FormatedLLMOutput(BaseModel):
-    answer: float = Field(
-        description="The message that answers the users question or 'I don't know'",
-    )
-
-def search(query: str, db: Session):
+def search(query: str) -> str:
     query_embedding = ollama.embed(
         model="nomic-embed-text:latest",
         input=query,
@@ -186,6 +186,8 @@ def search(query: str, db: Session):
         score_threshold=0.5,
     ).points
 
+    print(f"found {len(results)} documents\n")
+
     prompt_sources = "\n\n".join([hit.payload.get('text')['content'] for hit in results])
 
     SYSTEM_PROMPT = f"""
@@ -198,15 +200,15 @@ def search(query: str, db: Session):
     HUMAN_PROMPT = f"""
     User question:
     {query}
-    
+
     Context Documents: {prompt_sources}
-    
+
     Provide the reasoning behind.
     """
 
     response = ollama.chat(model="llama3.1", messages=[
-        { "role": "system", "content": SYSTEM_PROMPT },
-        { "role": "user", "content": HUMAN_PROMPT },
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": HUMAN_PROMPT},
     ])
 
     print(response)

@@ -101,4 +101,7 @@ def process_document(stream: DocumentStream):
 
 def extract_content(file_bytes: bytes, filename: str) -> str:
     stream = DocumentStream(name=filename, stream=BytesIO(file_bytes))
+
+
+
     return process_document(stream)
