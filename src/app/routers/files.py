@@ -1,17 +1,17 @@
 from fastapi import APIRouter, UploadFile, Depends
-from typing import List, Optional
+from typing import List
 
+from qdrant_client.http.models import ScoredPoint
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
+from src.schemas.responses import ErrorResponse, MessageResponse, SearchResponse
+from src.schemas.file import FileStatusEnum, FileRead
+from src.services import file_service
+from src.services.file_service import DEFAULT_FILE_LIMIT, DEFAULT_START_SKIP
 from src.repositories.file_repository import FileRepository
 from src.dependencies import get_database_session
 from src.models.file import File
-from src.exceptions.exceptions import ErrorResponse
-from src.schemas.file import FileStatusEnum, FileRead
-from src.schemas.responses import MessageResponse, SearchResponse
-from src.services import file_service
-from src.services.file_service import DEFAULT_FILE_LIMIT, DEFAULT_START_SKIP
 from src.utils.validators import FileValidator
 
 router = APIRouter(
@@ -28,6 +28,12 @@ _error_responses = {
 
 def get_file_repository(session: AsyncSession = Depends(get_database_session)) -> FileRepository:
     return FileRepository(session)
+
+@router.get("/query-points", responses={
+    500: { "model": ErrorResponse, "description": "Internal server error" }
+})
+def query_points(query: str) -> list[ScoredPoint]:
+    return file_service.retrieve_points(query)
 
 @router.get("/query", response_model=SearchResponse, responses={
     500: { "model": ErrorResponse, "description": "Internal server error" }

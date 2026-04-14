@@ -4,8 +4,8 @@ import logging
 from datetime import datetime
 from starlette.responses import JSONResponse
 
-from src.exceptions.exceptions import (
-    ConflictException, BaseAppException, ErrorResponse, NotFoundException, TypeNotSupportedException)
+from src.app.exceptions.exceptions import ConflictException, BaseAppException, NotFoundException, TypeNotSupportedException
+from src.schemas.responses import ErrorResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

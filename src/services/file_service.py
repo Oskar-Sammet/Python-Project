@@ -1,19 +1,17 @@
 import os
 import ollama
 import uuid
-import opendataloader_pdf
 import logging
 
 from pydantic import BaseModel, Field
-from typing import Any, List, Annotated
-from fastapi import UploadFile, Depends
-from qdrant_client.http.models import VectorParams, Distance, PointStruct
+from typing import List
+from fastapi import UploadFile
+from qdrant_client.http.models import VectorParams, Distance, PointStruct, ScoredPoint
 from docling.exceptions import ConversionError
 
-from src.dependencies import get_database_session
 from src.models.file import File
-from src.schemas.file import FileRead, FileBase, FileStatusEnum
-from src.exceptions.exceptions import NotFoundException, BaseAppException, TypeNotSupportedException
+from src.schemas.file import FileBase, FileStatusEnum
+from src.app.exceptions.exceptions import NotFoundException, BaseAppException
 from src.config import get_settings
 from src.utils.docling import extract_content
 from src.utils.chunker import ChunkingPipeline, Chunk
@@ -147,7 +145,7 @@ async def process_file_by_id(file_id: int, repo: FileRepository):
     await repo.session.commit()
 
 def generate_embeddings(filename: str, chunks: List[Chunk]):
-    print("Generating embeddings...")
+    logger.info(f"Generating embeddings for {len(chunks)} chunks\n")
 
     embeddings = ollama.embed(
         model="nomic-embed-text:latest",
@@ -166,12 +164,17 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
     )
 
     vectors = embeddings['embeddings']
+    point_ids = [str(uuid.uuid4()) for _ in range(len(vectors))]
     points = []
 
     for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
+        prev_id = point_ids[idx - 1] if idx > 0 else None
+        next_id = point_ids[idx + 1] if idx < len(chunks) - 1 else None
+
         points.append(PointStruct(
-            id=str(uuid.uuid4()),
+            id=point_ids[idx],
             vector=vector,
+
             payload={
                 "text": chunk,
                 "filename": filename,
@@ -179,18 +182,20 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
                 "token_count": len(chunk.content.split()),
                 "page": chunk.metadata.get("page", 0),
                 "type": chunk.metadata.get("type", 0),
+                "prev_id": prev_id,
+                "next_id": next_id,
             }
         ))
 
     client.upsert(collection_name="files", points=points)
 
-def search(query: str) -> str:
+def retrieve_points(query: str) -> list[ScoredPoint]:
     query_embedding = ollama.embed(
         model="nomic-embed-text:latest",
         input=query,
     )['embeddings'][0]
 
-    results = client.query_points(
+    queried_points = client.query_points(
         collection_name="files",
         query=query_embedding,
         with_payload=True,
@@ -198,7 +203,34 @@ def search(query: str) -> str:
         score_threshold=0.5,
     ).points
 
-    print(f"found {len(results)} documents\n")
+    existing_ids = {point.id for point in queried_points}
+    neighbor_ids = set()
+
+    for point in queried_points:
+        if point.payload.get("prev_id"):
+            neighbor_ids.add(point.payload['prev_id'])
+        if point.payload.get("next_id"):
+            neighbor_ids.add(point.payload['next_id'])
+
+    new_ids = list(neighbor_ids - existing_ids)
+
+    if new_ids:
+        neighbors = client.retrieve(
+            collection_name="files",
+            ids=new_ids,
+            with_payload=True,
+        )
+        queried_points.extend(
+            ScoredPoint(id=r.id, payload=r.payload, score=0.0, version=0)
+            for r in neighbors
+        )
+
+    return queried_points
+
+def search(query: str) -> str:
+    results = retrieve_points(query)
+
+    logger.info(f"Found {len(results)} documents\n")
 
     prompt_sources = "\n\n".join([hit.payload.get('text')['content'] for hit in results])
 
@@ -223,7 +255,7 @@ def search(query: str) -> str:
         {"role": "user", "content": HUMAN_PROMPT},
     ])
 
-    print(response)
+
 
     # answer = FormatedLLMOutput.model_validate_json(response.message.content)
     #

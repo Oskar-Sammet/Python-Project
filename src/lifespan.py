@@ -1,6 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.database import engine, Base
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -10,10 +14,10 @@ async def lifespan(app: FastAPI):
 
     # Verify database connectivity
     async with engine.connect() as conn:
-        print("Database connection verified")
+        logger.info(f"Database connection verified")
 
     yield
 
     await engine.dispose()
-    print("Database connection closed")
+    logger.info(f"Database connection closed")
 
