@@ -30,3 +30,8 @@ class NotFoundException(BaseAppException):
 
     def __init__(self, message: str):
         super().__init__(message, status_code=404)
+
+class TypeNotSupportedException(BaseAppException):
+    """File type not supported exception for our application"""
+    def __init__(self, message: str):
+        super().__init__(message, status_code=502)

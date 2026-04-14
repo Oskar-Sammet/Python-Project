@@ -8,11 +8,12 @@ from pydantic import BaseModel, Field
 from typing import Any, List, Annotated
 from fastapi import UploadFile, Depends
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
+from docling.exceptions import ConversionError
 
 from src.dependencies import get_database_session
 from src.models.file import File
 from src.schemas.file import FileRead, FileBase, FileStatusEnum
-from src.exceptions.exceptions import NotFoundException, BaseAppException
+from src.exceptions.exceptions import NotFoundException, BaseAppException, TypeNotSupportedException
 from src.config import get_settings
 from src.utils.docling import extract_content
 from src.utils.chunker import ChunkingPipeline, Chunk
@@ -100,25 +101,25 @@ async def process_file_by_id(file_id: int, repo: FileRepository):
     except OSError:
         raise BaseAppException("Failed to read file!")
 
-    # Throw an error for not yet supported file types
-    if file_extension == "txt" or file_extension == "md":
-        raise BaseAppException(f"File type {file_extension} is not supported yet")
-
-    # Content Extraction with Docling
     try:
         file_content = extract_content(raw_file_content, file_path)
-    except Exception as exc:
-        raise BaseAppException(f"Failed to extract file content using docling: {exc}")
+    except ConversionError as exc:
+        logger.error('Docling ConversionError: File format not allowed!')
 
-    # Using OpenDataLoader
-    try:
-        opendataloader_pdf.convert(
-            input_path=[f'{file_path}'],
-            output_dir="uploads",
-            format="json,html",
-        )
-    except Exception as exc:
-        raise BaseAppException(f"Failed to convert file using OpenDataLoader: {exc}")
+        try:
+            file_content = raw_file_content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise BaseAppException("Failed to decode file! File content type not supported!")
+
+    # TODO: Using OpenDataLoader
+    # try:
+    #     opendataloader_pdf.convert(
+    #         input_path=[f'{file_path}'],
+    #         output_dir="uploads",
+    #         format="json,html",
+    #     )
+    # except Exception as exc:
+    #     raise BaseAppException(f"Failed to convert file using OpenDataLoader: {exc}")
 
     # Write extracted content
     try:
