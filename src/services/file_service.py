@@ -6,13 +6,14 @@ import logging
 
 from pydantic import BaseModel, Field
 from typing import Any, List, Annotated
-from fastapi import UploadFile
+from fastapi import UploadFile, Depends
 from qdrant_client.http.models import VectorParams, Distance, PointStruct
 
+from src.dependencies import get_database_session
 from src.models.file import File
 from src.schemas.file import FileRead, FileBase, FileStatusEnum
 from src.exceptions.exceptions import NotFoundException, BaseAppException
-from src.config import settings
+from src.config import get_settings
 from src.utils.docling import extract_content
 from src.utils.chunker import ChunkingPipeline, Chunk
 from src.vector_database.qdrant import client
@@ -26,6 +27,8 @@ PIPELINE_CHUNK_OVERLAP_SIZE: int = 200
 PIPELINE_MIN_CHUNK_SIZE: int = 100
 PIPELINE_DOC_TYPE: str = "markdown"
 
+settings = get_settings()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -34,22 +37,25 @@ class FormatedLLMOutput(BaseModel):
         description="The message that answers the users question or 'I don't know'",
     )
 
-def get_file_by_id(file_id: int, repo: FileRepository) -> FileRead:
-    file = repo.get_by_id(file_id)
-    if not file:
-        raise NotFoundException(f"File with id {file_id} not found")
-    return FileRead(**file.__dict__)
+async def get_file_by_id(file_id: int, repo: FileRepository) -> File:
+    file = await repo.get_by_id(file_id)
+    if not  file:
+        raise NotFoundException(f"File with id {file_id} not found!")
+    return file
 
-def get_files_filtered(status: FileStatusEnum | None, skip: int = DEFAULT_START_SKIP, limit: int = DEFAULT_FILE_LIMIT, repo: FileRepository = None) -> list[type[File]]:
-    return repo.get_filtered_files(status, skip, limit)
+async def get_files_filtered(status: FileStatusEnum, skip: int, limit: int, repo: FileRepository) -> List[File]:
+    return await repo.get_filtered_files(status, skip, limit)
 
 # This function should only handle the file upload / the file creation in the database
-async def upload_file(uploaded_file: Annotated[UploadFile, File()], repo: FileRepository):
+async def upload_file(
+        uploaded_file: UploadFile,
+        repo: FileRepository,
+) -> FileBase:
     # Create upload dir when needed
     os.makedirs(settings.UPLOAD_DESTINATION, exist_ok=True)
 
     # Define file path
-    file_path = os.path.join(settings.UPLOAD_DESTINATION, uploaded_file.filename)
+    file_path = os.path.join(str(settings.UPLOAD_DESTINATION), str(uploaded_file.filename))
 
     # Write uploaded file to destination
     with open(file_path, "wb") as f:
@@ -57,26 +63,32 @@ async def upload_file(uploaded_file: Annotated[UploadFile, File()], repo: FileRe
         f.write(content)
 
     # Create a FileCreate instance from the uploaded file using the mapper
-    file_create = FileBase(filename=uploaded_file.filename, status=FileStatusEnum.READY, path=file_path)
-
-    # create a file instance
-    file_instance = File(**file_create.model_dump())
+    file_create = FileBase(filename=str(uploaded_file.filename), status=FileStatusEnum.READY, path=file_path)
 
     # close the stream
     await uploaded_file.close()
 
-    if not file_instance:
-        raise BaseAppException("Failed to create file instance!")
+    created_file = await repo.create(**file_create.model_dump())
 
-    return repo.create(file_instance)
+    await repo.session.commit()
 
-def process_files_by_ids(file_ids: List[int], repo: FileRepository):
+    return file_create
+
+async def process_files_by_ids(file_ids: List[int], repo: FileRepository) -> list[File]:
+    files = []
+
     for file_id in file_ids:
-        process_file_by_id(file_id, repo)
+        file = await process_file_by_id(file_id, repo)
+        files.append(file)
+
+    return files
 
 # Find file path in database, read raw file, start content extraction, create chunks, generate embeddings
-def process_file_by_id(file_id: int, repo: FileRepository):
-    file = get_file_by_id(file_id, repo)
+async def process_file_by_id(file_id: int, repo: FileRepository):
+    file = await repo.get_by_id(file_id)
+
+    if file is None:
+        raise NotFoundException(f"File with id {file_id} not found!")
 
     file_extension = file.filename.split(".")[-1].lower()
     file_path = file.path
@@ -130,9 +142,8 @@ def process_file_by_id(file_id: int, repo: FileRepository):
     # Generate Embeddings using ollama
     generate_embeddings(file.filename, generated_chunks)
 
-    repo.update_status(file_id, FileStatusEnum.COMPLETED)
-
-    return file
+    await repo.update_status(file.id, FileStatusEnum.COMPLETED)
+    await repo.session.commit()
 
 def generate_embeddings(filename: str, chunks: List[Chunk]):
     print("Generating embeddings...")

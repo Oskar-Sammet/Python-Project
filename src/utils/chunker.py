@@ -40,7 +40,7 @@ class ChunkingPipeline:
             source_metadata = {}
 
         # Preprocess the text before splitting it into chunks
-        cleaned_text = self.preprocess(text)
+        cleaned_text = preprocess(text)
 
         # Chunking
         raw_chunks = self.splitter.create_documents(

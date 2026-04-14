@@ -1,15 +1,19 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-
-from src.database.database import Session
+from src.database import engine, Base
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db = Session()
-    app.state.db = db
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        pass
 
-    app.state.test = 50
+    # Verify database connectivity
+    async with engine.connect() as conn:
+        print("Database connection verified")
 
     yield
 
-    db.close()
+    await engine.dispose()
+    print("Database connection closed")
+

@@ -1,6 +1,8 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
-from src.config import settings
+from src.config import get_settings
+
+settings = get_settings()
 
 client = QdrantClient(
     host=settings.QDRANT_HOST,

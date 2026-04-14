@@ -1,32 +1,23 @@
-from sqlalchemy.orm import Session
+from typing import TypeVar, Generic, Type, Optional, List, Any
+from sqlalchemy import select, update, delete, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies import DatabaseDep
-from src.models.file import File
 from src.schemas.file import FileStatusEnum
+from src.database import Base
+from src.models.file import File
+from .base_repository import BaseRepository
 
-class FileRepository:
-    def __init__(self, db: Session):
-        self.db = db
+ModelType = TypeVar("ModelType", bound=Base)
 
-    def get_by_id(self, file_id: int) -> File | None:
-        return self.db.query(File).filter(File.id == file_id).first()
+class FileRepository(BaseRepository[File]):
+    def __init__(self, session: AsyncSession):
+        super().__init__(File, session)
 
-    def get_filtered_files(self, status: FileStatusEnum | None, skip: int, limit: int) -> list[type[File]]:
-        query = self.db.query(File)
-        if status is not None:
-            query = query.filter(File.status == str(status.value))
-        return query.offset(skip).limit(limit).all()
+    async def get_filtered_files(self, status: FileStatusEnum, skip: int, limit: int) -> List[File]:
+        query = select(self.model).where(self.model.status == status.value).offset(skip).limit(limit)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
 
-    def create(self, file_instance: File) -> File:
-        self.db.add(file_instance)
-        self.db.commit()
-        self.db.refresh(file_instance)
-        return file_instance
-
-    def update_status(self, file_id: int, status: FileStatusEnum) -> None:
-        self.db.query(File).filter(File.id == file_id).update({ "status": status })
-        self.db.commit()
-
-
-def get_file_repository(db: DatabaseDep) -> FileRepository:
-    return FileRepository(db)
+    async def update_status(self, file_id: int, status: FileStatusEnum) -> None:
+        query = update(File).where(self.model.id == file_id).values(status=status)
+        await self.session.execute(query)

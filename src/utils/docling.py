@@ -3,7 +3,7 @@ import os
 from io import BytesIO
 from typing import Any
 from collections import Counter
-from src.config import settings
+from src.config import get_settings
 
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
@@ -16,6 +16,8 @@ from docling_core.types.io import DocumentStream
 PAGE_BREAK_PLACEHOLDER = "<!-- page break -->"
 IMAGE_DESCRIPTION_START = "<image_description>"
 IMAGE_DESCRIPTION_END = "</image_description>"
+
+settings = get_settings()
 
 def create_picture_description_options() -> PictureDescriptionApiOptions:
     return PictureDescriptionApiOptions(

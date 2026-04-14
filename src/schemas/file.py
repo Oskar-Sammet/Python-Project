@@ -1,8 +1,8 @@
-from enum import Enum
+import enum
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
-class FileStatusEnum(str, Enum):
+class FileStatusEnum(enum.Enum):
     READY = "ready"
     COMPLETED = "completed"
 

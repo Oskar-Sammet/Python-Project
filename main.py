@@ -6,7 +6,7 @@ from src.exceptions.exception_handlers import register_exception_handlers
 
 app = FastAPI(lifespan=lifespan)
 
-# create_table()
 register_exception_handlers(app)
 
 app.include_router(files.router)
+
