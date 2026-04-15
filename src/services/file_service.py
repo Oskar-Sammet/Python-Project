@@ -7,24 +7,18 @@ from pydantic import BaseModel, Field
 from typing import List
 from fastapi import UploadFile
 from qdrant_client.http.models import VectorParams, Distance, PointStruct, ScoredPoint
-from docling.exceptions import ConversionError
 
 from src.models.file import File
 from src.schemas.file import FileBase, FileStatusEnum
 from src.app.exceptions.exceptions import NotFoundException, BaseAppException
 from src.config import get_settings
-from src.utils.docling import extract_content
-from src.utils.chunker import ChunkingPipeline, Chunk
+from src.utils.chunker import Chunk
+from src.utils.extractors import get_extractor
 from src.vector_database.qdrant import client
 from src.repositories.file_repository import FileRepository
 
 DEFAULT_START_SKIP: int = 0
 DEFAULT_FILE_LIMIT: int = 100
-
-PIPELINE_CHUNK_SIZE: int = 1500
-PIPELINE_CHUNK_OVERLAP_SIZE: int = 200
-PIPELINE_MIN_CHUNK_SIZE: int = 100
-PIPELINE_DOC_TYPE: str = "markdown"
 
 settings = get_settings()
 
@@ -38,7 +32,7 @@ class FormatedLLMOutput(BaseModel):
 
 async def get_file_by_id(file_id: int, repo: FileRepository) -> File:
     file = await repo.get_by_id(file_id)
-    if not  file:
+    if not file:
         raise NotFoundException(f"File with id {file_id} not found!")
     return file
 
@@ -61,14 +55,11 @@ async def upload_file(
         content = await uploaded_file.read()
         f.write(content)
 
-    # Create a FileCreate instance from the uploaded file using the mapper
     file_create = FileBase(filename=str(uploaded_file.filename), status=FileStatusEnum.READY, path=file_path)
 
-    # close the stream
     await uploaded_file.close()
 
-    created_file = await repo.create(**file_create.model_dump())
-
+    await repo.create(**file_create.model_dump())
     await repo.session.commit()
 
     return file_create
@@ -82,64 +73,25 @@ async def process_files_by_ids(file_ids: List[int], repo: FileRepository) -> lis
 
     return files
 
-# Find file path in database, read raw file, start content extraction, create chunks, generate embeddings
+# Find file path in database, extract content, create chunks, generate embeddings
 async def process_file_by_id(file_id: int, repo: FileRepository):
     file = await repo.get_by_id(file_id)
 
     if file is None:
         raise NotFoundException(f"File with id {file_id} not found!")
 
-    file_extension = file.filename.split(".")[-1].lower()
-    file_path = file.path
-
-    # Read the files content
     try:
-        with open(file_path, "rb") as f:
+        with open(file.path, "rb") as f:
             raw_file_content = f.read()
     except OSError:
         raise BaseAppException("Failed to read file!")
 
-    try:
-        file_content = extract_content(raw_file_content, file_path)
-    except ConversionError as exc:
-        logger.error('Docling ConversionError: File format not allowed!')
+    extractor = get_extractor(file.filename)
+    chunks = extractor.extract(raw_file_content, file.path)
 
-        try:
-            file_content = raw_file_content.decode("utf-8")
-        except UnicodeDecodeError:
-            raise BaseAppException("Failed to decode file! File content type not supported!")
+    logger.info(f"Generated {len(chunks)} chunks using {type(extractor).__name__}")
 
-    # TODO: Using OpenDataLoader
-    # try:
-    #     opendataloader_pdf.convert(
-    #         input_path=[f'{file_path}'],
-    #         output_dir="uploads",
-    #         format="json,html",
-    #     )
-    # except Exception as exc:
-    #     raise BaseAppException(f"Failed to convert file using OpenDataLoader: {exc}")
-
-    # Write extracted content
-    try:
-        with open(file_path + ".md", "w") as f:
-            f.write(file_content)
-    except Exception as exc:
-        raise BaseAppException(f"Failed to write extracted content: {exc}")
-
-    chunking_pipeline = ChunkingPipeline(
-        chunk_size=PIPELINE_CHUNK_SIZE,
-        chunk_overlap=PIPELINE_CHUNK_OVERLAP_SIZE,
-        min_chunk_size=PIPELINE_MIN_CHUNK_SIZE,
-        document_type=PIPELINE_DOC_TYPE
-    )
-
-    generated_chunks = chunking_pipeline.chunk(text=file_content,
-        source_metadata={"source": file_path + ".md"})
-
-    logging.info(f"Generated {len(generated_chunks)} chunks\n")
-
-    # Generate Embeddings using ollama
-    generate_embeddings(file.filename, generated_chunks)
+    generate_embeddings(file.filename, chunks)
 
     await repo.update_status(file.id, FileStatusEnum.COMPLETED)
     await repo.session.commit()
@@ -174,7 +126,6 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
         points.append(PointStruct(
             id=point_ids[idx],
             vector=vector,
-
             payload={
                 "text": chunk,
                 "filename": filename,
@@ -242,23 +193,17 @@ def search(query: str) -> str:
     """
 
     HUMAN_PROMPT = f"""
-    User question:
-    {query}
+        User question:
+        {query}
 
-    Context Documents: {prompt_sources}
+        Context Documents: {prompt_sources}
 
-    Provide the reasoning behind.
+        Provide the reasoning behind.
     """
 
     response = ollama.chat(model="llama3.1", messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": HUMAN_PROMPT},
     ])
-
-
-
-    # answer = FormatedLLMOutput.model_validate_json(response.message.content)
-    #
-    # print(answer)
 
     return response['message']['content']

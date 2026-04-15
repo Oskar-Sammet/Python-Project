@@ -4,6 +4,7 @@ from typing import Dict, Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import re
 import hashlib
+import json
 
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 200
@@ -40,7 +41,7 @@ class ChunkingPipeline:
             source_metadata = {}
 
         # Preprocess the text before splitting it into chunks
-        cleaned_text = preprocess(text)
+        cleaned_text = _preprocess(text)
 
         # Chunking
         raw_chunks = self.splitter.create_documents(
@@ -56,7 +57,7 @@ class ChunkingPipeline:
             if len(doc.page_content) < self.min_chunk_size:
                 continue
 
-            chunk_id = _generate_chunk_id(doc.page_content, i)
+            chunk_id = generate_chunk_id(doc.page_content, i)
 
             start_index = doc.metadata.get("start_index", 0)
             end_index = start_index + len(doc.page_content)
@@ -66,7 +67,7 @@ class ChunkingPipeline:
                 "chunk_index": i,
                 "chunk_size": len(doc.page_content),
                 "total_chunks": len(raw_chunks),
-                "preview": doc.page_content[:100] + "..." if len(doc.page_content) > 100 else doc.page_content,
+                # "preview": doc.page_content[:100] + "..." if len(doc.page_content) > 100 else doc.page_content,
             }
 
             chunk = Chunk(
@@ -115,8 +116,7 @@ def _get_separators(document_type: str) -> list[str]:
 
     return separator_map.get(document_type, separator_map["markdown"])
 
-
-def preprocess(text: str) -> str:
+def _preprocess(text: str) -> str:
     text = text.encode("utf-8", errors="ignore").decode("utf-8")
 
     # Standardize the line endings
@@ -134,6 +134,41 @@ def preprocess(text: str) -> str:
 
     return text.strip()
 
-def _generate_chunk_id(content: str, index: int) -> str:
+def generate_chunk_id(content: str, index: int) -> str:
     hash_content = f"{content[:100]}_{index}"
     return hashlib.md5(hash_content.encode()).hexdigest()[:12]
+
+def odl_chunking(doc, min_chars=200):
+    """Best for: Balanced chunk sizes, reducing noise."""
+    chunks = []
+    buffer_text = ""
+    buffer_pages = []
+
+    for element in doc["kids"]:
+        if element["type"] in ("paragraph", "heading", "list"):
+            buffer_text += element.get("content", "") + "\n"
+            page = element.get("page number")
+            if page and page not in buffer_pages:
+                buffer_pages.append(page)
+
+            if len(buffer_text) >= min_chars:
+                content = buffer_text.strip()
+                chunks.append(Chunk(
+                    chunk_id=generate_chunk_id(content, element.get('id')),
+                    content=content,
+                    metadata={
+                        "type": element["type"],
+                        "pages": buffer_pages.copy(),
+                        "bbox": element.get("bounding box"),
+                        "source": doc.get("file name"),
+                    },
+                    start_index = 0,
+                    end_index=0,
+                ))
+                buffer_text = ""
+                buffer_pages = []
+
+    if buffer_text.strip():
+        chunks.append({"text": buffer_text.strip(), "metadata": {"pages": buffer_pages}})
+
+    return chunks

@@ -8,7 +8,7 @@ from src.config import get_settings
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode, \
-    PictureDescriptionApiOptions, PipelineOptions
+    PictureDescriptionApiOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption, CsvFormatOption, MarkdownFormatOption
 from docling_core.types.doc import ImageRefMode
 from docling_core.types.io import DocumentStream
@@ -21,7 +21,7 @@ settings = get_settings()
 
 def create_picture_description_options() -> PictureDescriptionApiOptions:
     return PictureDescriptionApiOptions(
-        url = f"{settings.OLLAMA_URL}/v1/chat/completions",
+        url=f"{settings.OLLAMA_URL}/v1/chat/completions",
         params=dict[str, Any](
             model=settings.VISION_LANGUAGE_MODEL,
             think=False,

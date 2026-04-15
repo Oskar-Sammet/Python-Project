@@ -1,11 +1,10 @@
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
-from .database import async_session_factory
-
-from fastapi import Request
+from .database import session_factory, scoped_session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 async def get_database_session() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_factory() as session:
+    async with scoped_session() as session:
         try:
             yield session
         except Exception:
@@ -16,7 +15,7 @@ async def get_database_session() -> AsyncGenerator[AsyncSession, None]:
 
 @asynccontextmanager
 async def get_database_session_context() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_factory() as session:
+    async with session_factory() as session:
         try:
             yield session
             await session.commit()

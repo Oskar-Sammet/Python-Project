@@ -77,5 +77,5 @@ async def process_file(file_id: int, repo: FileRepository = Depends(get_file_rep
 # Route for processing multiple files
 @router.post("/process", response_model=MessageResponse, responses=_error_responses)
 async def process_files(file_ids: List[int], repo: FileRepository = Depends(get_file_repository)) -> JSONResponse:
-    file_service.process_files_by_ids(file_ids, repo)
+    await file_service.process_files_by_ids(file_ids, repo)
     return JSONResponse(status_code=200, content={"message": "Files processed successfully"})
