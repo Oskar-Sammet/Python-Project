@@ -179,7 +179,6 @@ def retrieve_points(query: str) -> list[ScoredPoint]:
 
     return queried_points
 
-def search(query: str) -> str:
+def search(query: str) -> dict:
     state = graph.invoke(AgentState(query=query, answer="", retrieved_docs=None))
-
-    return state['answer']
+    return state
