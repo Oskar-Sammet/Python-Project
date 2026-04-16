@@ -3,7 +3,7 @@ from src.utils.extractors.docling_extractor import DoclingExtractor
 from src.utils.extractors.odl_extractor import ODLExtractor
 
 _EXTRACTOR_MAP: dict[str, type[ContentExtractor]] = {
-    "pdf": DoclingExtractor, # ODLExtractor
+    "pdf": DoclingExtractor, # ODLExtractor DoclingExtractor
     "md": DoclingExtractor,
     "txt": DoclingExtractor,
     "csv": DoclingExtractor,

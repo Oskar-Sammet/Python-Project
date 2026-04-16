@@ -53,7 +53,7 @@ def grade_documents(state: AgentState) -> AgentState:
     relevant_docs = []
 
     for doc in state['retrieved_docs']:
-        content = doc.payload.get('text', {}).get('content', '')
+        content = doc.payload.get('content', '')
 
         response = ollama.chat(model=settings.OLLAMA_MODEL, messages=[
             {
@@ -83,7 +83,7 @@ def enrich_documents(state: AgentState) -> dict:
     llm = ChatOllama(model=settings.OLLAMA_MODEL).bind_tools(tools)
 
     docs_text = "\n\n".join(
-        f"[ID: {doc.id}]\n{doc.payload.get('text', {}).get('content', '')}"
+        f"[ID: {doc.id}]\n{doc.payload.get('content', '')}"
         for doc in state['retrieved_docs']
     )
 

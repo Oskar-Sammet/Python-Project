@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import re
@@ -15,10 +15,24 @@ DEFAULT_CONTENT_TYPE = "markdown"
 @dataclasses.dataclass
 class Chunk:
     content: str
-    metadata: Dict[str, Any]
+    metadata: Optional[ChunkMetadata]
     chunk_id: str
     start_index: int
     end_index: int
+
+@dataclasses.dataclass
+class ChunkMetadata:
+    source_id: SourceMetadata
+    page_number: int
+    chunk_index: int
+    total_chunks: int
+    #token_count: int
+
+@dataclasses.dataclass
+class SourceMetadata:
+    source: Optional[str]
+    file_name: Optional[str]
+    file_type: Optional[str]
 
 class ChunkingPipeline:
     def __init__(self, chunk_size: int = DEFAULT_CHUNK_SIZE, chunk_overlap: int = DEFAULT_CHUNK_OVERLAP, min_chunk_size: int = DEFAULT_MIN_CHUNK_SIZE, document_type: str = DEFAULT_CONTENT_TYPE):
@@ -62,17 +76,19 @@ class ChunkingPipeline:
             start_index = doc.metadata.get("start_index", 0)
             end_index = start_index + len(doc.page_content)
 
+            # text.metadata
             metadata = {
-                **source_metadata,
+                "source_id": source_metadata,
+
+                "page_number": 0,
                 "chunk_index": i,
-                "chunk_size": len(doc.page_content),
-                "total_chunks": len(raw_chunks),
-                # "preview": doc.page_content[:100] + "..." if len(doc.page_content) > 100 else doc.page_content,
+                "total_chunks": len(doc.page_content),
             }
 
+            # text
             chunk = Chunk(
                 content=doc.page_content,
-                metadata=metadata,
+                metadata=ChunkMetadata(**metadata),
                 chunk_id=chunk_id,
                 start_index=start_index,
                 end_index=end_index,

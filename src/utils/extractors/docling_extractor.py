@@ -38,4 +38,8 @@ class DoclingExtractor(ContentExtractor):
             document_type=DOCUMENT_TYPE,
         )
 
-        return pipeline.chunk(text=file_content, source_metadata={"source": file_path + ".md"})
+        return pipeline.chunk(text=file_content, source_metadata={
+            "source": "",
+            "file_name": file_path + ".md",
+            "file_type": "",
+        })

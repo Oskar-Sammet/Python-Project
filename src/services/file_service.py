@@ -17,6 +17,7 @@ from src.utils.chunker import Chunk
 from src.utils.extractors import get_extractor
 from src.vector_database.qdrant import client
 from src.repositories.file_repository import FileRepository
+from utils.chunker import Chunk
 
 DEFAULT_START_SKIP: int = 0
 DEFAULT_FILE_LIMIT: int = 100
@@ -124,18 +125,25 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
         prev_id = point_ids[idx - 1] if idx > 0 else None
         next_id = point_ids[idx + 1] if idx < len(chunks) - 1 else None
 
+        # payload
         points.append(PointStruct(
             id=point_ids[idx],
             vector=vector,
             payload={
-                "text": chunk,
-                "filename": filename,
-                "chunk_index": idx,
-                "token_count": len(chunk.content.split()),
-                "page": chunk.metadata.get("page", 0),
-                "type": chunk.metadata.get("type", 0),
-                "prev_id": prev_id,
-                "next_id": next_id,
+                "id": chunk.chunk_id,
+                "content": chunk.content,
+
+                "metadata": chunk.metadata,
+
+                "relations": {
+                    "prev_id": prev_id,
+                    "next_id": next_id,
+                },
+
+                "offsets": {
+                    "start": chunk.start_index,
+                    "end": chunk.end_index
+                },
             }
         ))
 
@@ -159,10 +167,10 @@ def retrieve_points(query: str) -> list[ScoredPoint]:
     neighbor_ids = set()
 
     for point in queried_points:
-        if point.payload.get("prev_id"):
-            neighbor_ids.add(point.payload['prev_id'])
-        if point.payload.get("next_id"):
-            neighbor_ids.add(point.payload['next_id'])
+        if point.payload['relations']['prev_id']:
+            neighbor_ids.add(point.payload['relations']['prev_id'])
+        if point.payload['relations']['next_id']:
+            neighbor_ids.add(point.payload['relations']['next_id'])
 
     new_ids = list(neighbor_ids - existing_ids)
 
