@@ -12,14 +12,11 @@ from src.services.file_service import DEFAULT_FILE_LIMIT, DEFAULT_START_SKIP
 from src.repositories.file_repository import FileRepository
 from src.dependencies import get_database_session
 from src.models.file import File
-from src.utils.validators import FileValidator
 
 router = APIRouter(
     prefix="/files",
     tags=["files"],
 )
-
-upload_validator = FileValidator()
 
 _error_responses = {
     404: { "model": ErrorResponse, "description": "Resource not found" },

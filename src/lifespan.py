@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
+from src.graph.graph import workflow
 from src.database import Database, engine, Base, settings
 
 logging.basicConfig(level=logging.INFO)

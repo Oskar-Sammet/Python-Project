@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     DATABASE_ECHO: bool = False
 
     OLLAMA_URL: str
+    OLLAMA_MODEL: str
+    OLLAMA_EMBEDDING_MODEL: str
+
     VISION_LANGUAGE_MODEL: str
     VISION_LANGUAGE_PROMPT: str
 

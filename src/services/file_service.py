@@ -8,6 +8,7 @@ from typing import List
 from fastapi import UploadFile
 from qdrant_client.http.models import VectorParams, Distance, PointStruct, ScoredPoint
 
+from src.graph.graph import AgentState, graph
 from src.models.file import File
 from src.schemas.file import FileBase, FileStatusEnum
 from src.app.exceptions.exceptions import NotFoundException, BaseAppException
@@ -142,7 +143,7 @@ def generate_embeddings(filename: str, chunks: List[Chunk]):
 
 def retrieve_points(query: str) -> list[ScoredPoint]:
     query_embedding = ollama.embed(
-        model="nomic-embed-text:latest",
+        model=settings.OLLAMA_EMBEDDING_MODEL,
         input=query,
     )['embeddings'][0]
 
@@ -179,31 +180,6 @@ def retrieve_points(query: str) -> list[ScoredPoint]:
     return queried_points
 
 def search(query: str) -> str:
-    results = retrieve_points(query)
+    state = graph.invoke(AgentState(query=query, answer="", retrieved_docs=None))
 
-    logger.info(f"Found {len(results)} documents\n")
-
-    prompt_sources = "\n\n".join([hit.payload.get('text')['content'] for hit in results])
-
-    SYSTEM_PROMPT = f"""
-        You are a helpful assistant.
-        Answer the following question only based on the following sources below.
-        If the answer is not in the sources, say "I don't know". If the question has nothing to do with the provided sources, say "I don't know".
-        Do not use any external knowledge, assumptions, or general LLM knowledge, only the context provided should be used.
-    """
-
-    HUMAN_PROMPT = f"""
-        User question:
-        {query}
-
-        Context Documents: {prompt_sources}
-
-        Provide the reasoning behind.
-    """
-
-    response = ollama.chat(model="llama3.1", messages=[
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": HUMAN_PROMPT},
-    ])
-
-    return response['message']['content']
+    return state['answer']
