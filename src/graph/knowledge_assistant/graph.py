@@ -1,9 +1,9 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 
-from src.graph.state import AgentState
-from src.graph.tools import tools
-from src.graph.nodes import (
+from state import AgentState
+from tools import tools
+from src.graph.knowledge_assistant.nodes import (
     rewrite_query,
     retrieve_documents,
     grade_documents,

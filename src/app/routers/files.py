@@ -37,7 +37,7 @@ def query_points(query: str) -> list[ScoredPoint]:
 })
 def search(query: str) -> JSONResponse:
     results = file_service.search(query)
-    return JSONResponse(status_code=200, content={ "answer": results['answer'], "query": results['query'] })
+    return JSONResponse(status_code=200, content={ "answer": results['answer'], "knowledge_assistant": results['knowledge_assistant'] })
 
 # Get a paginated list of processed files with filtering
 @router.get("/", response_model=List[FileRead], responses={

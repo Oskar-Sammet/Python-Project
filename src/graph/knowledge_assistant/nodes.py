@@ -6,14 +6,13 @@ from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, Tool
 from langchain_ollama import ChatOllama
 from qdrant_client.http.models import ScoredPoint
 
-from src.graph.state import AgentState
-from src.graph.tools import tools
+from state import AgentState
+from tools import tools
 from src.config import get_settings
 from src.vector_database.qdrant import client
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-
 
 def rewrite_query(state: AgentState) -> AgentState:
     """Node for refining the users query"""

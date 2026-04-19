@@ -1,4 +1,3 @@
-import os
 import ollama
 import uuid
 import logging
@@ -8,12 +7,11 @@ from typing import List
 from fastapi import UploadFile
 from qdrant_client.http.models import VectorParams, Distance, PointStruct, ScoredPoint
 
-from src.graph.graph import AgentState, graph
+from src.graph.knowledge_assistant.graph import AgentState, graph
 from src.models.file import File
 from src.schemas.file import FileBase, FileStatusEnum
 from src.app.exceptions.exceptions import NotFoundException, BaseAppException
 from src.config import get_settings
-from src.utils.chunker import Chunk
 from src.utils.extractors import get_extractor
 from src.vector_database.qdrant import client
 from src.repositories.file_repository import FileRepository
@@ -41,30 +39,16 @@ async def get_file_by_id(file_id: int, repo: FileRepository) -> File:
 async def get_files_filtered(status: FileStatusEnum, skip: int, limit: int, repo: FileRepository) -> List[File]:
     return await repo.get_filtered_files(status, skip, limit)
 
-# This function should only handle the file upload / the file creation in the database
-async def upload_file(
-        uploaded_file: UploadFile,
-        repo: FileRepository,
-) -> FileBase:
-    # Create upload dir when needed
-    os.makedirs(settings.UPLOAD_DESTINATION, exist_ok=True)
+# This function should only handle the file process / the file creation in the database
+async def upload_file(uploaded_file: UploadFile, repo: FileRepository):
+    await process_graph.ainvoke(ProcessState(
+        uploaded_file=uploaded_file,
+        repo=repo,
 
-    # Define file path
-    file_path = os.path.join(str(settings.UPLOAD_DESTINATION), str(uploaded_file.filename))
-
-    # Write uploaded file to destination
-    with open(file_path, "wb") as f:
-        content = await uploaded_file.read()
-        f.write(content)
-
-    file_create = FileBase(filename=str(uploaded_file.filename), status=FileStatusEnum.READY, path=file_path)
-
-    await uploaded_file.close()
-
-    await repo.create(**file_create.model_dump())
-    await repo.session.commit()
-
-    return file_create
+        file_name="",
+        upload_dir="",
+        full_path="",
+    ))
 
 async def process_files_by_ids(file_ids: List[int], repo: FileRepository) -> list[File]:
     files = []
