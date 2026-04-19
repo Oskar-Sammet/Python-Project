@@ -1,7 +1,13 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
+from src.config import get_settings
 
-client = QdrantClient(host="localhost", port=6333)
+settings = get_settings()
+
+client = QdrantClient(
+    host=settings.QDRANT_HOST,
+    port=settings.QDRANT_PORT
+)
 
 def create_collection(collection_name: str, size: int = 100):
     if not client.collection_exists(collection_name):

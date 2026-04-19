@@ -1,36 +1,34 @@
+import os
+
 from io import BytesIO
 from typing import Any
+from collections import Counter
+from src.config import get_settings
 
-from click import prompt
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode, \
     PictureDescriptionApiOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption, CsvFormatOption, \
-    MarkdownFormatOption, AsciiDocFormatOption
+from docling.document_converter import DocumentConverter, PdfFormatOption, CsvFormatOption, MarkdownFormatOption
 from docling_core.types.doc import ImageRefMode
 from docling_core.types.io import DocumentStream
-import os
-from collections import Counter
 
-OLLAMA_URL = "http://localhost:11434"
-VLM_MODEL = "qwen3.5:2b"
-VLM_PROMPT = "Explain what you see in the image in 1 sentence."
-
-PAGE_BREAK_PLACEHOLDER = "[PAGE_BREAK]"
+PAGE_BREAK_PLACEHOLDER = "<!-- page break -->"
 IMAGE_DESCRIPTION_START = "<image_description>"
 IMAGE_DESCRIPTION_END = "</image_description>"
 
+settings = get_settings()
+
 def create_picture_description_options() -> PictureDescriptionApiOptions:
     return PictureDescriptionApiOptions(
-        url = f"{OLLAMA_URL}/v1/chat/completions",
+        url=f"{settings.OLLAMA_URL}/v1/chat/completions",
         params=dict[str, Any](
-            model=VLM_MODEL,
+            model=settings.VISION_LANGUAGE_MODEL,
             think=False,
             seed=42,
             max_completion_tokens=256,
         ),
-        prompt=VLM_PROMPT,
+        prompt=settings.VISION_LANGUAGE_PROMPT,
         timeout=90,
     )
 
@@ -47,26 +45,19 @@ def create_pdf_pipeline_option() -> PdfPipelineOptions:
         #picture_description_options=create_picture_description_options(),
     )
 
-
 def process_document(stream: DocumentStream):
     # Returns a Docling Document
     converter = DocumentConverter(
+        allowed_formats=[InputFormat.PDF, InputFormat.MD, InputFormat.CSV],
         format_options={
             InputFormat.PDF: PdfFormatOption(
                 pipeline_options=create_pdf_pipeline_option(),
                 backend=PyPdfiumDocumentBackend
             ),
 
-            # Not implemented - Needs work
-            InputFormat.CSV: CsvFormatOption(
-                pipeline_options=None,
-            ),
-            InputFormat.MD: MarkdownFormatOption(
-                pipeline_options=None,
-            ),
-            InputFormat.ASCIIDOC: AsciiDocFormatOption(
-                pipeline_options=None,
-            )
+            InputFormat.CSV: CsvFormatOption(),
+
+            InputFormat.MD: MarkdownFormatOption(),
         }
     )
 
@@ -99,16 +90,14 @@ def process_document(stream: DocumentStream):
         if line or len(line) > 1
     ])
 
-    # remove content that is repeated in multiple pages
-    blocks = content.split("\n")
-    counter = Counter(blocks)
-
-    filtered_blocks = [
-        b for b in blocks
-        if counter[b] < len(doc.pages) - 1
-    ]
-
-    content = "\n".join(filtered_blocks) + "\n"
+    # remove content that is repeated in multiple pages (only meaningful for multi-page docs)
+    if len(doc.pages) > 1:
+        blocks = content.split("\n")
+        counter = Counter(blocks)
+        content = "\n".join(
+            b for b in blocks
+            if counter[b] < len(doc.pages) - 1
+        ) + "\n"
 
     return content
 
